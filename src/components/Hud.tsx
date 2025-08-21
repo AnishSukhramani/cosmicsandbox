@@ -151,7 +151,7 @@ export default function Hud() {
         <div className="space-y-1 opacity-80">
           {cameraMode === "free" ? (
             <>
-              <div>• <kbd className="bg-white/20 px-1 rounded">W</kbd> Move forward (where you're looking)</div>
+              <div>• <kbd className="bg-white/20 px-1 rounded">W</kbd> Move forward (where you&apos;re looking)</div>
               <div>• <kbd className="bg-white/20 px-1 rounded">S</kbd> Move backward</div>
               <div>• <kbd className="bg-white/20 px-1 rounded">A/D</kbd> Strafe left/right</div>
               <div>• <kbd className="bg-white/20 px-1 rounded">Mouse</kbd> Look around (click to lock)</div>

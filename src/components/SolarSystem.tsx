@@ -4,7 +4,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Stars, Environment } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { Color, Vector3, AdditiveBlending, Quaternion, Euler, Mesh } from "three";
+import { Color, Vector3, AdditiveBlending, Mesh, Camera, MeshBasicMaterial } from "three";
 import Planet from "@/components/Planet";
 import Spaceship from "@/components/Spaceship";
 import { AU_TO_UNITS, PLANETS } from "@/lib/planets";
@@ -39,7 +39,7 @@ function useEnhancedZoom(controlsRef: React.RefObject<OrbitControlsImpl | null>)
 }
 
 // Custom hook for free camera movement
-function useFreeCamera(camera: any, cameraMode: string, freeCameraSpeed: number, keysPressed: React.MutableRefObject<Set<string>>) {
+function useFreeCamera(camera: Camera, cameraMode: string, freeCameraSpeed: number, keysPressed: React.MutableRefObject<Set<string>>) {
   const isPointerLocked = useRef(false);
   const pitch = useRef(0); // Vertical rotation (up/down)
   const yaw = useRef(0);   // Horizontal rotation (left/right)
@@ -114,7 +114,7 @@ function useFreeCamera(camera: any, cameraMode: string, freeCameraSpeed: number,
       document.removeEventListener('pointerlockchange', handlePointerLockChange);
       document.removeEventListener('click', handleClick);
     };
-  }, [camera, cameraMode]);
+  }, [camera, cameraMode, keysPressed]);
 
   useFrame((_, delta) => {
     if (cameraMode !== "free" && cameraMode !== "spaceship") return;
@@ -433,81 +433,7 @@ export default function SolarSystem() {
       <Stars radius={1000} depth={150} count={20000} factor={5} saturation={0} fade speed={0.2} />
       
       {/* Animated cosmic effects */}
-      <group>
-        {/* Pulsing stars */}
-        {Array.from({ length: 200 }, (_, i) => {
-          const ref = useRef<Mesh>(null);
-          const pulseSpeed = Math.random() * 2 + 1;
-          const baseOpacity = Math.random() * 0.4 + 0.1;
-          
-          useFrame(({ clock }) => {
-            if (ref.current && ref.current.material) {
-              const time = clock.getElapsedTime();
-              const pulse = Math.sin(time * pulseSpeed) * 0.3 + 0.7;
-              (ref.current.material as any).opacity = baseOpacity * pulse;
-            }
-          });
-          
-          return (
-            <mesh 
-              ref={ref}
-              key={`pulse-${i}`}
-              position={[
-                (Math.random() - 0.5) * 1500,
-                (Math.random() - 0.5) * 1500,
-                (Math.random() - 0.5) * 1500
-              ]}
-            >
-              <sphereGeometry args={[Math.random() * 0.3 + 0.05, 4, 4]} />
-              <meshBasicMaterial 
-                color="#ffffff" 
-                transparent 
-                opacity={baseOpacity}
-              />
-            </mesh>
-          );
-        })}
-        
-        {/* Drifting cosmic dust */}
-        {Array.from({ length: 300 }, (_, i) => {
-          const ref = useRef<Mesh>(null);
-          const speed = Math.random() * 0.3 + 0.05;
-          const rotationSpeed = Math.random() * 0.01 + 0.005;
-          
-          useFrame((_, delta) => {
-            if (ref.current) {
-              ref.current.position.z += speed * delta;
-              ref.current.rotation.z += rotationSpeed;
-              
-              // Reset particle when it goes too far
-              if (ref.current.position.z > 800) {
-                ref.current.position.z = -800;
-                ref.current.position.x = (Math.random() - 0.5) * 1500;
-                ref.current.position.y = (Math.random() - 0.5) * 1500;
-              }
-            }
-          });
-          
-          return (
-            <mesh 
-              ref={ref}
-              key={`dust-${i}`}
-              position={[
-                (Math.random() - 0.5) * 1500,
-                (Math.random() - 0.5) * 1500,
-                (Math.random() - 0.5) * 1500
-              ]}
-            >
-              <sphereGeometry args={[Math.random() * 0.2 + 0.02, 4, 4]} />
-              <meshBasicMaterial 
-                color="#ffffff" 
-                transparent 
-                opacity={Math.random() * 0.2 + 0.05}
-              />
-            </mesh>
-          );
-        })}
-      </group>
+      <AnimatedCosmicEffects />
 
       {/* Enhanced Sun */}
       <group>
@@ -605,6 +531,92 @@ export default function SolarSystem() {
         />
         <Vignette eskil={false} offset={0.2} darkness={0.6} />
       </EffectComposer>
+    </group>
+  );
+}
+
+function PulsingStar() {
+  const ref = useRef<Mesh>(null);
+  const pulseSpeed = Math.random() * 2 + 1;
+  const baseOpacity = Math.random() * 0.4 + 0.1;
+  
+  useFrame(({ clock }) => {
+    if (ref.current && ref.current.material) {
+      const time = clock.getElapsedTime();
+      const pulse = Math.sin(time * pulseSpeed) * 0.3 + 0.7;
+      (ref.current.material as MeshBasicMaterial).opacity = baseOpacity * pulse;
+    }
+  });
+  
+  return (
+    <mesh 
+      ref={ref}
+      position={[
+        (Math.random() - 0.5) * 1500,
+        (Math.random() - 0.5) * 1500,
+        (Math.random() - 0.5) * 1500
+      ]}
+    >
+      <sphereGeometry args={[Math.random() * 0.3 + 0.05, 4, 4]} />
+      <meshBasicMaterial 
+        color="#ffffff" 
+        transparent 
+        opacity={baseOpacity}
+      />
+    </mesh>
+  );
+}
+
+function DriftingDust() {
+  const ref = useRef<Mesh>(null);
+  const speed = Math.random() * 0.3 + 0.05;
+  const rotationSpeed = Math.random() * 0.01 + 0.005;
+  
+  useFrame((_, delta) => {
+    if (ref.current) {
+      ref.current.position.z += speed * delta;
+      ref.current.rotation.z += rotationSpeed;
+      
+      // Reset particle when it goes too far
+      if (ref.current.position.z > 800) {
+        ref.current.position.z = -800;
+        ref.current.position.x = (Math.random() - 0.5) * 1500;
+        ref.current.position.y = (Math.random() - 0.5) * 1500;
+      }
+    }
+  });
+  
+  return (
+    <mesh 
+      ref={ref}
+      position={[
+        (Math.random() - 0.5) * 1500,
+        (Math.random() - 0.5) * 1500,
+        (Math.random() - 0.5) * 1500
+      ]}
+    >
+      <sphereGeometry args={[Math.random() * 0.2 + 0.02, 4, 4]} />
+      <meshBasicMaterial 
+        color="#ffffff" 
+        transparent 
+        opacity={Math.random() * 0.2 + 0.05}
+      />
+    </mesh>
+  );
+}
+
+function AnimatedCosmicEffects() {
+  return (
+    <group>
+      {/* Pulsing stars */}
+      {Array.from({ length: 200 }, (_, i) => (
+        <PulsingStar key={`pulse-${i}`} />
+      ))}
+      
+      {/* Drifting cosmic dust */}
+      {Array.from({ length: 300 }, (_, i) => (
+        <DriftingDust key={`dust-${i}`} />
+      ))}
     </group>
   );
 }

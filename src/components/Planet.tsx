@@ -1,7 +1,7 @@
 "use client";
 import { memo, useMemo, useRef } from "react";
-import { Html, useTexture } from "@react-three/drei";
-import { Vector3, Color, AdditiveBlending, MeshStandardMaterial, TextureLoader } from "three";
+import { Html } from "@react-three/drei";
+import { Vector3, Color, AdditiveBlending, MeshStandardMaterial, Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { PlanetData } from "@/lib/planets";
 import { KM_TO_UNITS } from "@/lib/planets";
@@ -97,7 +97,7 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
   const { selected, hiResTextures } = useUiState();
   const radius = Math.max(0.1, data.radiusKm * KM_TO_UNITS);
   const isSelected = selected === data.name;
-  const planetRef = useRef<any>(null);
+  const planetRef = useRef<Mesh>(null);
 
   // Enhanced materials without textures for now
   // Textures can be added later when available
