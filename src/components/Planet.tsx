@@ -3,13 +3,11 @@ import { memo, useMemo, useRef, Suspense } from "react";
 import { Html, useTexture } from "@react-three/drei";
 import {
   Vector3,
-  Color,
   Mesh,
-  FrontSide,
   DoubleSide,
   RepeatWrapping,
   SRGBColorSpace,
-  ShaderMaterial,
+  AdditiveBlending,
 } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { PlanetData } from "@/lib/planets";
@@ -23,82 +21,22 @@ export interface PlanetProps {
   showLabel?: boolean;
 }
 
-const atmosphereVertexShader = `
-  varying vec3 vNormal;
-  varying vec3 vPosition;
-  void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
+// Minimal sphere segment counts for software WebGL
+const PLANET_W = 32;
+const PLANET_H = 16;
 
-const atmosphereFragmentShader = `
-  uniform vec3 uColor;
-  uniform float uIntensity;
-  varying vec3 vNormal;
-  varying vec3 vPosition;
-  void main() {
-    vec3 viewDir = normalize(-vPosition);
-    float fresnel = 1.0 - dot(viewDir, vNormal);
-    fresnel = pow(fresnel, 3.0) * uIntensity;
-    gl_FragColor = vec4(uColor, fresnel);
-  }
-`;
-
-function getAtmosphereColor(planetName: string): Color {
-  switch (planetName) {
-    case "Venus": return new Color(1.0, 0.75, 0.4);
-    case "Earth": return new Color(0.3, 0.6, 1.0);
-    case "Mars": return new Color(0.9, 0.5, 0.3);
-    case "Jupiter": return new Color(0.9, 0.7, 0.4);
-    case "Saturn": return new Color(0.9, 0.8, 0.5);
-    case "Uranus": return new Color(0.5, 0.8, 0.9);
-    case "Neptune": return new Color(0.3, 0.4, 1.0);
-    default: return new Color(0.5, 0.5, 0.5);
+function getAtmosphereColor(name: string): string {
+  switch (name) {
+    case "Venus": return "#cc9944";
+    case "Earth": return "#4488ff";
+    case "Mars": return "#cc7744";
+    case "Jupiter": return "#cc9944";
+    case "Saturn": return "#ccaa55";
+    case "Uranus": return "#66bbcc";
+    case "Neptune": return "#4466ff";
+    default: return "";
   }
 }
-
-function getAtmosphereIntensity(planetName: string): number {
-  switch (planetName) {
-    case "Venus": return 1.5;
-    case "Earth": return 1.2;
-    case "Mars": return 0.6;
-    case "Jupiter": return 1.0;
-    case "Saturn": return 0.8;
-    case "Uranus": return 0.9;
-    case "Neptune": return 1.1;
-    default: return 0.0;
-  }
-}
-
-function getPlanetRoughness(planetName: string): number {
-  switch (planetName) {
-    case "Mercury": return 0.95;
-    case "Venus": return 0.7;
-    case "Earth": return 0.6;
-    case "Mars": return 0.9;
-    case "Jupiter": return 0.3;
-    case "Saturn": return 0.4;
-    case "Uranus": return 0.5;
-    case "Neptune": return 0.5;
-    case "Pluto": return 0.95;
-    default: return 0.7;
-  }
-}
-
-function getPlanetMetalness(planetName: string): number {
-  switch (planetName) {
-    case "Mercury": return 0.1;
-    default: return 0.0;
-  }
-}
-
-// Sphere segment counts — lower = faster, still looks good
-const PLANET_SEGMENTS = 48;
-const PLANET_RINGS = 24;
-const ATMO_SEGMENTS = 32;
-const ATMO_RINGS = 16;
 
 function TexturedPlanetBody({
   data,
@@ -115,7 +53,6 @@ function TexturedPlanetBody({
 
   const texturePaths: string[] = [data.texture];
   if (data.cloudMap) texturePaths.push(data.cloudMap);
-  if (data.nightMap) texturePaths.push(data.nightMap);
 
   const textures = useTexture(texturePaths);
   const mainTexture = Array.isArray(textures) ? textures[0] : textures;
@@ -151,21 +88,21 @@ function TexturedPlanetBody({
         onPointerDown={onClick}
         scale={isSelected ? 1.08 : 1}
       >
-        <sphereGeometry args={[radius, PLANET_SEGMENTS, PLANET_RINGS]} />
+        <sphereGeometry args={[radius, PLANET_W, PLANET_H]} />
         <meshStandardMaterial
           map={mainTexture}
-          roughness={getPlanetRoughness(data.name)}
-          metalness={getPlanetMetalness(data.name)}
+          roughness={0.7}
+          metalness={0}
         />
       </mesh>
 
       {cloudTexture && (
         <mesh ref={cloudRef} scale={isSelected ? 1.08 : 1}>
-          <sphereGeometry args={[radius * 1.005, PLANET_SEGMENTS, PLANET_RINGS]} />
-          <meshStandardMaterial
+          <sphereGeometry args={[radius * 1.005, PLANET_W, PLANET_H]} />
+          <meshBasicMaterial
             map={cloudTexture}
             transparent
-            opacity={data.name === "Venus" ? 0.95 : 0.45}
+            opacity={data.name === "Venus" ? 0.9 : 0.4}
             depthWrite={false}
             side={DoubleSide}
           />
@@ -203,25 +140,20 @@ function FallbackPlanetBody({
       onPointerDown={onClick}
       scale={isSelected ? 1.08 : 1}
     >
-      <sphereGeometry args={[radius, 32, 16]} />
-      <meshStandardMaterial
-        color={data.color}
-        roughness={getPlanetRoughness(data.name)}
-        metalness={getPlanetMetalness(data.name)}
-      />
+      <sphereGeometry args={[radius, 24, 12]} />
+      <meshBasicMaterial color={data.color} />
     </mesh>
   );
 }
 
-// Saturn rings using cheap MeshBasicMaterial and lower segment count
-const RING_SEGMENTS = 96;
+// Saturn rings — minimal, MeshBasicMaterial
+const RING_SEGS = 64;
 
 function SaturnRings({ radius }: { radius: number }) {
   return (
     <group rotation={[Math.PI / 2, 0, 0]}>
-      {/* B Ring */}
       <mesh>
-        <ringGeometry args={[radius * 1.3, radius * 1.7, RING_SEGMENTS]} />
+        <ringGeometry args={[radius * 1.3, radius * 1.7, RING_SEGS]} />
         <meshBasicMaterial
           color="#c8a86e"
           transparent
@@ -229,9 +161,8 @@ function SaturnRings({ radius }: { radius: number }) {
           side={DoubleSide}
         />
       </mesh>
-      {/* A Ring */}
       <mesh>
-        <ringGeometry args={[radius * 1.75, radius * 2.05, RING_SEGMENTS]} />
+        <ringGeometry args={[radius * 1.75, radius * 2.05, RING_SEGS]} />
         <meshBasicMaterial
           color="#d4b67a"
           transparent
@@ -239,23 +170,12 @@ function SaturnRings({ radius }: { radius: number }) {
           side={DoubleSide}
         />
       </mesh>
-      {/* Cassini Division */}
       <mesh>
-        <ringGeometry args={[radius * 1.7, radius * 1.75, RING_SEGMENTS]} />
+        <ringGeometry args={[radius * 1.7, radius * 1.75, RING_SEGS]} />
         <meshBasicMaterial
           color="#1a1510"
           transparent
-          opacity={0.85}
-          side={DoubleSide}
-        />
-      </mesh>
-      {/* C Ring */}
-      <mesh>
-        <ringGeometry args={[radius * 1.15, radius * 1.3, RING_SEGMENTS]} />
-        <meshBasicMaterial
-          color="#a08550"
-          transparent
-          opacity={0.25}
+          opacity={0.8}
           side={DoubleSide}
         />
       </mesh>
@@ -267,35 +187,24 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
   const { selected } = useUiState();
   const radius = Math.max(0.1, data.radiusKm * KM_TO_UNITS);
   const isSelected = selected === data.name;
-
-  const atmosphereColor = getAtmosphereColor(data.name);
-  const atmosphereIntensity = getAtmosphereIntensity(data.name);
-
-  const atmosphereMaterial = useMemo(() => {
-    if (atmosphereIntensity <= 0) return null;
-    return new ShaderMaterial({
-      vertexShader: atmosphereVertexShader,
-      fragmentShader: atmosphereFragmentShader,
-      uniforms: {
-        uColor: { value: atmosphereColor },
-        uIntensity: { value: atmosphereIntensity },
-      },
-      transparent: true,
-      side: FrontSide,
-      depthWrite: false,
-    });
-  }, [atmosphereColor, atmosphereIntensity]);
+  const atmoColor = getAtmosphereColor(data.name);
 
   return (
     <group
       position={position}
       rotation={[0, 0, (data.axialTiltDeg * Math.PI) / 180]}
     >
-      {/* Atmosphere glow */}
-      {atmosphereMaterial && (
-        <mesh scale={isSelected ? 1.12 : 1.04}>
-          <sphereGeometry args={[radius * 1.12, ATMO_SEGMENTS, ATMO_RINGS]} />
-          <primitive object={atmosphereMaterial} />
+      {/* Lightweight atmosphere glow — simple additive sphere, no custom shader */}
+      {atmoColor && (
+        <mesh scale={isSelected ? 1.1 : 1.03}>
+          <sphereGeometry args={[radius * 1.1, 16, 8]} />
+          <meshBasicMaterial
+            color={atmoColor}
+            transparent
+            opacity={0.15}
+            blending={AdditiveBlending}
+            depthWrite={false}
+          />
         </mesh>
       )}
 
@@ -318,10 +227,8 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
         />
       </Suspense>
 
-      {/* Saturn rings */}
       {data.hasRings && <SaturnRings radius={radius} />}
 
-      {/* Planet label */}
       {showLabel && (
         <Html center distanceFactor={10} style={{ pointerEvents: "none" }}>
           <div

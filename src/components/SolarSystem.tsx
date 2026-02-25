@@ -1,8 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Stars, useTexture } from "@react-three/drei";
-import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
+import { useFrame, useThree, useLoader } from "@react-three/fiber";
+import { OrbitControls, useTexture } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
   Color,
@@ -10,9 +9,10 @@ import {
   AdditiveBlending,
   Mesh,
   Camera,
-  BackSide,
   SRGBColorSpace,
   Group,
+  TextureLoader,
+  EquirectangularReflectionMapping,
 } from "three";
 import Planet from "@/components/Planet";
 import Spaceship from "@/components/Spaceship";
@@ -110,8 +110,7 @@ function useFreeCamera(
   useFrame((_, delta) => {
     if (cameraMode !== "free" && cameraMode !== "spaceship") return;
     const moveSpeed = freeCameraSpeed * delta * 0.5;
-    const d = moveDir.current;
-    d.set(0, 0, 0);
+    const d = moveDir.current.set(0, 0, 0);
     if (keysPressed.current.has("w") || keysPressed.current.has("arrowup"))
       d.z -= 1;
     if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown"))
@@ -129,21 +128,7 @@ function useFreeCamera(
 
 const SUN_RADIUS_UNITS = 1.2;
 
-// ---------- Milky Way background sphere ----------
-function MilkyWayBackground() {
-  const texture = useTexture("/textures/2k_stars_milky_way.jpg");
-  useMemo(() => {
-    texture.colorSpace = SRGBColorSpace;
-  }, [texture]);
-  return (
-    <mesh>
-      <sphereGeometry args={[900, 32, 16]} />
-      <meshBasicMaterial map={texture} side={BackSide} toneMapped={false} />
-    </mesh>
-  );
-}
-
-// ---------- Textured Sun ----------
+// Textured Sun — minimal geometry, meshBasicMaterial only
 function TexturedSun() {
   const sunTexture = useTexture("/textures/2k_sun.jpg");
   const sunRef = useRef<Mesh>(null);
@@ -158,47 +143,41 @@ function TexturedSun() {
   return (
     <group>
       <mesh ref={sunRef}>
-        <sphereGeometry args={[SUN_RADIUS_UNITS, 48, 24]} />
+        <sphereGeometry args={[SUN_RADIUS_UNITS, 32, 16]} />
         <meshBasicMaterial map={sunTexture} toneMapped={false} />
       </mesh>
-      {/* Single corona glow layer instead of three */}
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS * 1.3, 24, 12]} />
+        <sphereGeometry args={[SUN_RADIUS_UNITS * 1.25, 16, 8]} />
         <meshBasicMaterial
           color="#ffaa22"
           transparent
-          opacity={0.15}
+          opacity={0.12}
           blending={AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
-      {/* Point light — NO shadow casting */}
       <pointLight color="#ffd9a3" intensity={8} distance={2000} decay={2} />
     </group>
   );
 }
 
-// ---------- Fallback Sun (no texture) ----------
 function FallbackSun() {
   return (
     <group>
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS, 48, 24]} />
-        <meshBasicMaterial
-          color="#ffdd99"
-          toneMapped={false}
-        />
+        <sphereGeometry args={[SUN_RADIUS_UNITS, 32, 16]} />
+        <meshBasicMaterial color="#ffdd99" toneMapped={false} />
       </mesh>
       <pointLight color="#ffd9a3" intensity={8} distance={2000} decay={2} />
     </group>
   );
 }
 
-// ---------- Orbit rings ----------
+// Orbit lines — reduced resolution
 function Orbits({ visible }: { visible: boolean }) {
   const rings = useMemo(() => {
     return PLANETS.map((p) => {
-      const steps = 128;
+      const steps = 80;
       const arr = new Float32Array((steps + 1) * 3);
       for (let j = 0; j <= steps; j++) {
         const simDays = (j / steps) * p.orbitalPeriodDays;
@@ -228,7 +207,21 @@ function Orbits({ visible }: { visible: boolean }) {
   );
 }
 
-// ---------- Main SolarSystem component ----------
+// Set scene.background to equirectangular Milky Way texture (no extra mesh)
+function SceneBackground() {
+  const { scene } = useThree();
+  const bgTexture = useLoader(TextureLoader, "/textures/2k_stars_milky_way.jpg");
+  useEffect(() => {
+    bgTexture.mapping = EquirectangularReflectionMapping;
+    bgTexture.colorSpace = SRGBColorSpace;
+    scene.background = bgTexture;
+    return () => {
+      scene.background = new Color("#000005");
+    };
+  }, [bgTexture, scene]);
+  return null;
+}
+
 export default function SolarSystem() {
   const { camera, scene } = useThree();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
@@ -264,13 +257,12 @@ export default function SolarSystem() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Fallback background color while texture loads
   useEffect(() => {
     scene.background = new Color("#000005");
   }, [scene]);
 
   const simDaysRef = useRef(0);
-
-  // Pre-allocate reusable vectors for the frame loop
   const _targetPos = useRef(new Vector3());
   const _desiredPos = useRef(new Vector3());
   const _currentTarget = useRef(new Vector3());
@@ -333,21 +325,13 @@ export default function SolarSystem() {
 
   return (
     <group>
-      {/* Milky Way background skybox */}
+      {/* Milky Way as scene.background — zero extra draw calls */}
       <Suspense fallback={null}>
-        <MilkyWayBackground />
+        <SceneBackground />
       </Suspense>
 
-      {/* Single star layer — reduced count */}
-      <Stars
-        radius={300}
-        depth={80}
-        count={4000}
-        factor={2.5}
-        saturation={0.1}
-        fade
-        speed={0.3}
-      />
+      {/* NO Stars particle system — too expensive in software WebGL */}
+      {/* NO EffectComposer / Bloom / Vignette — too expensive in software WebGL */}
 
       {/* Textured Sun */}
       <Suspense fallback={<FallbackSun />}>
@@ -357,7 +341,7 @@ export default function SolarSystem() {
       {/* Orbit paths */}
       <Orbits visible={showOrbits} />
 
-      {/* Planets — position updated via refs in useFrame */}
+      {/* Planets */}
       <PlanetsGroup simDaysRef={simDaysRef} showLabels={showLabels} />
 
       {/* Orbit controls */}
@@ -393,24 +377,11 @@ export default function SolarSystem() {
         />
       )}
 
-      <ambientLight intensity={0.06} />
-
-      {/* Lighter post-processing — smaller bloom kernel */}
-      <EffectComposer>
-        <Bloom
-          mipmapBlur
-          intensity={0.8}
-          luminanceThreshold={0.2}
-          luminanceSmoothing={0.5}
-          kernelSize={1}
-        />
-        <Vignette eskil={false} offset={0.15} darkness={0.5} />
-      </EffectComposer>
+      <ambientLight intensity={0.08} />
     </group>
   );
 }
 
-// Planet group that updates positions via refs each frame (no React re-renders)
 function PlanetsGroup({
   simDaysRef,
   showLabels,
@@ -419,7 +390,9 @@ function PlanetsGroup({
   showLabels: boolean;
 }) {
   const setSelected = useUiState((s) => s.setSelected);
-  const groupRefs = useRef<(Group | null)[]>(new Array(PLANETS.length).fill(null));
+  const groupRefs = useRef<(Group | null)[]>(
+    new Array(PLANETS.length).fill(null)
+  );
 
   useFrame(() => {
     for (let i = 0; i < PLANETS.length; i++) {
