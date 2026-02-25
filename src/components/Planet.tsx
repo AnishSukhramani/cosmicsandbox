@@ -1,6 +1,6 @@
 "use client";
 import { memo, useMemo, useRef, Suspense } from "react";
-import { Html, useTexture } from "@react-three/drei";
+import { useTexture, Billboard, Text } from "@react-three/drei";
 import {
   Vector3,
   Mesh,
@@ -9,7 +9,7 @@ import {
   SRGBColorSpace,
   AdditiveBlending,
 } from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, ThreeEvent } from "@react-three/fiber";
 import type { PlanetData } from "@/lib/planets";
 import { KM_TO_UNITS } from "@/lib/planets";
 import { useUiState } from "@/components/state";
@@ -21,7 +21,6 @@ export interface PlanetProps {
   showLabel?: boolean;
 }
 
-// Minimal sphere segment counts for software WebGL
 const PLANET_W = 32;
 const PLANET_H = 16;
 
@@ -47,7 +46,7 @@ function TexturedPlanetBody({
   data: PlanetData;
   radius: number;
   isSelected: boolean;
-  onClick?: () => void;
+  onClick?: (e: ThreeEvent<PointerEvent>) => void;
 }) {
   const planetRef = useRef<Mesh>(null);
 
@@ -89,11 +88,7 @@ function TexturedPlanetBody({
         scale={isSelected ? 1.08 : 1}
       >
         <sphereGeometry args={[radius, PLANET_W, PLANET_H]} />
-        <meshStandardMaterial
-          map={mainTexture}
-          roughness={0.7}
-          metalness={0}
-        />
+        <meshBasicMaterial map={mainTexture} />
       </mesh>
 
       {cloudTexture && (
@@ -121,7 +116,7 @@ function FallbackPlanetBody({
   data: PlanetData;
   radius: number;
   isSelected: boolean;
-  onClick?: () => void;
+  onClick?: (e: ThreeEvent<PointerEvent>) => void;
 }) {
   const planetRef = useRef<Mesh>(null);
 
@@ -146,7 +141,6 @@ function FallbackPlanetBody({
   );
 }
 
-// Saturn rings — minimal, MeshBasicMaterial
 const RING_SEGS = 64;
 
 function SaturnRings({ radius }: { radius: number }) {
@@ -194,7 +188,7 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
       position={position}
       rotation={[0, 0, (data.axialTiltDeg * Math.PI) / 180]}
     >
-      {/* Lightweight atmosphere glow — simple additive sphere, no custom shader */}
+      {/* Simple atmosphere glow */}
       {atmoColor && (
         <mesh scale={isSelected ? 1.1 : 1.03}>
           <sphereGeometry args={[radius * 1.1, 16, 8]} />
@@ -208,7 +202,6 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
         </mesh>
       )}
 
-      {/* Planet body */}
       <Suspense
         fallback={
           <FallbackPlanetBody
@@ -229,29 +222,20 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
 
       {data.hasRings && <SaturnRings radius={radius} />}
 
+      {/* WebGL text label instead of DOM Html overlay — avoids per-frame layout/paint */}
       {showLabel && (
-        <Html center distanceFactor={10} style={{ pointerEvents: "none" }}>
-          <div
-            style={{
-              background: "rgba(0,0,0,0.7)",
-              color: "white",
-              padding: "4px 8px",
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: "bold",
-              whiteSpace: "nowrap",
-              transform: "translateY(-8px)",
-              border: isSelected
-                ? "2px solid #00ff88"
-                : "1px solid rgba(255,255,255,0.3)",
-              boxShadow: isSelected
-                ? "0 0 10px rgba(0,255,136,0.5)"
-                : "none",
-            }}
+        <Billboard position={[0, radius * 2.5, 0]}>
+          <Text
+            fontSize={0.3}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.02}
+            outlineColor="#000000"
           >
             {data.name}
-          </div>
-        </Html>
+          </Text>
+        </Billboard>
       )}
     </group>
   );
