@@ -10,5 +10,6 @@ Interactive 3D solar system visualization built with Next.js 15, React 19, Three
 - **Lint:** `npm run lint` — pre-existing lint errors exist in `download-textures.js` (CJS `require()` in a TS-linted project) and a warning in `Hud.tsx` (`<img>` vs `<Image />`). These are not regressions.
 - **Build:** `npm run build` compiles and type-checks successfully.
 - **Peer dependency warnings on install:** `leva` (debug UI library) has peer deps pinned to React <=18. These warnings are harmless with React 19 — the app works fine.
-- **Planet textures:** Most texture files under `public/textures/` are 0-byte placeholders. The optional `node download-textures.js` script fetches real textures from GitHub. The app renders without them using fallback solid-color materials.
+- **Planet textures:** Real 2K textures from Solar System Scope (CC BY 4.0) are in `public/textures/2k_*.jpg`. Planets load these via `useTexture` from drei with Suspense fallback to solid colors. Old placeholder files in `public/textures/` (0-byte) and `src/assets/textures/` are legacy artifacts.
+- **Orbital mechanics:** Planet positions use full Keplerian orbital elements (J2000 epoch) with Kepler's equation solver in `src/lib/planets.ts`.
 - **Standard commands** are in `package.json` `scripts`: `dev`, `dev:8080`, `build`, `start`, `lint`.
