@@ -12,33 +12,31 @@ import {
   Camera,
   BackSide,
   SRGBColorSpace,
+  Group,
 } from "three";
 import Planet from "@/components/Planet";
 import Spaceship from "@/components/Spaceship";
 import { AU_TO_UNITS, PLANETS, computeKeplerianPosition } from "@/lib/planets";
-// PlanetData type used indirectly via PLANETS array
 import { useUiState } from "@/components/state";
 
 function useEnhancedZoom(
   controlsRef: React.RefObject<OrbitControlsImpl | null>
 ) {
+  const dirVec = useRef(new Vector3());
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey && controlsRef.current) {
         event.preventDefault();
         const delta = event.deltaY;
-        const zoomSpeed = 0.1;
         const distance = controlsRef.current.getDistance();
         const newDistance = Math.max(
           0.5,
-          Math.min(1000, distance + delta * zoomSpeed)
+          Math.min(1000, distance + delta * 0.1)
         );
-        const direction = new Vector3();
-        controlsRef.current.object.getWorldDirection(direction);
-        const moveDistance = newDistance - distance;
+        controlsRef.current.object.getWorldDirection(dirVec.current);
         controlsRef.current.object.position.addScaledVector(
-          direction,
-          -moveDistance
+          dirVec.current,
+          -(newDistance - distance)
         );
         controlsRef.current.update();
       }
@@ -57,6 +55,7 @@ function useFreeCamera(
   const isPointerLocked = useRef(false);
   const pitch = useRef(0);
   const yaw = useRef(0);
+  const moveDir = useRef(new Vector3());
 
   useEffect(() => {
     if (cameraMode !== "free" && cameraMode !== "spaceship") return;
@@ -90,10 +89,7 @@ function useFreeCamera(
         !isPointerLocked.current
       ) {
         const canvas = document.querySelector("canvas");
-        if (canvas)
-          canvas
-            .requestPointerLock()
-            .catch(() => {});
+        if (canvas) canvas.requestPointerLock().catch(() => {});
       }
     };
 
@@ -114,31 +110,19 @@ function useFreeCamera(
   useFrame((_, delta) => {
     if (cameraMode !== "free" && cameraMode !== "spaceship") return;
     const moveSpeed = freeCameraSpeed * delta * 0.5;
-    const direction = new Vector3();
-    if (
-      keysPressed.current.has("w") ||
-      keysPressed.current.has("arrowup")
-    )
-      direction.z -= 1;
-    if (
-      keysPressed.current.has("s") ||
-      keysPressed.current.has("arrowdown")
-    )
-      direction.z += 1;
-    if (
-      keysPressed.current.has("a") ||
-      keysPressed.current.has("arrowleft")
-    )
-      direction.x -= 1;
-    if (
-      keysPressed.current.has("d") ||
-      keysPressed.current.has("arrowright")
-    )
-      direction.x += 1;
-    if (direction.length() > 0) {
-      direction.normalize();
-      direction.applyQuaternion(camera.quaternion);
-      camera.position.addScaledVector(direction, moveSpeed);
+    const d = moveDir.current;
+    d.set(0, 0, 0);
+    if (keysPressed.current.has("w") || keysPressed.current.has("arrowup"))
+      d.z -= 1;
+    if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown"))
+      d.z += 1;
+    if (keysPressed.current.has("a") || keysPressed.current.has("arrowleft"))
+      d.x -= 1;
+    if (keysPressed.current.has("d") || keysPressed.current.has("arrowright"))
+      d.x += 1;
+    if (d.lengthSq() > 0) {
+      d.normalize().applyQuaternion(camera.quaternion);
+      camera.position.addScaledVector(d, moveSpeed);
     }
   });
 }
@@ -153,7 +137,7 @@ function MilkyWayBackground() {
   }, [texture]);
   return (
     <mesh>
-      <sphereGeometry args={[900, 64, 32]} />
+      <sphereGeometry args={[900, 32, 16]} />
       <meshBasicMaterial map={texture} side={BackSide} toneMapped={false} />
     </mesh>
   );
@@ -173,57 +157,23 @@ function TexturedSun() {
 
   return (
     <group>
-      {/* Textured Sun surface */}
       <mesh ref={sunRef}>
-        <sphereGeometry args={[SUN_RADIUS_UNITS, 128, 64]} />
-        <meshBasicMaterial
-          map={sunTexture}
-          toneMapped={false}
-        />
+        <sphereGeometry args={[SUN_RADIUS_UNITS, 48, 24]} />
+        <meshBasicMaterial map={sunTexture} toneMapped={false} />
       </mesh>
-      {/* Corona glow layers */}
+      {/* Single corona glow layer instead of three */}
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS * 1.15, 64, 32]} />
+        <sphereGeometry args={[SUN_RADIUS_UNITS * 1.3, 24, 12]} />
         <meshBasicMaterial
-          color="#ffcc44"
+          color="#ffaa22"
           transparent
-          opacity={0.25}
+          opacity={0.15}
           blending={AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
-      <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS * 1.6, 64, 32]} />
-        <meshBasicMaterial
-          color="#ff8800"
-          transparent
-          opacity={0.08}
-          blending={AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS * 2.5, 32, 16]} />
-        <meshBasicMaterial
-          color="#ff6600"
-          transparent
-          opacity={0.03}
-          blending={AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-      {/* Sun light */}
-      <pointLight
-        castShadow
-        color="#ffd9a3"
-        intensity={8}
-        distance={2000}
-        decay={2}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-far={2000}
-        shadow-camera-near={1}
-      />
+      {/* Point light — NO shadow casting */}
+      <pointLight color="#ffd9a3" intensity={8} distance={2000} decay={2} />
     </group>
   );
 }
@@ -233,47 +183,31 @@ function FallbackSun() {
   return (
     <group>
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS, 128, 64]} />
-        <meshStandardMaterial
-          emissive={new Color("#ffb200")}
-          emissiveIntensity={8.0}
+        <sphereGeometry args={[SUN_RADIUS_UNITS, 48, 24]} />
+        <meshBasicMaterial
           color="#ffdd99"
           toneMapped={false}
         />
       </mesh>
-      <mesh>
-        <sphereGeometry args={[SUN_RADIUS_UNITS * 1.2, 64, 32]} />
-        <meshBasicMaterial
-          color="#ffb200"
-          transparent
-          opacity={0.3}
-          blending={AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-      <pointLight
-        castShadow
-        color="#ffd9a3"
-        intensity={8}
-        distance={2000}
-        decay={2}
-      />
+      <pointLight color="#ffd9a3" intensity={8} distance={2000} decay={2} />
     </group>
   );
 }
 
-// ---------- Orbit rings (now supports Keplerian ellipses) ----------
+// ---------- Orbit rings ----------
 function Orbits({ visible }: { visible: boolean }) {
   const rings = useMemo(() => {
     return PLANETS.map((p) => {
-      const steps = 256;
-      const points: Vector3[] = [];
+      const steps = 128;
+      const arr = new Float32Array((steps + 1) * 3);
       for (let j = 0; j <= steps; j++) {
         const simDays = (j / steps) * p.orbitalPeriodDays;
         const [x, y, z] = computeKeplerianPosition(p, simDays);
-        points.push(new Vector3(x, y, z));
+        arr[j * 3] = x;
+        arr[j * 3 + 1] = y;
+        arr[j * 3 + 2] = z;
       }
-      return { name: p.name, points };
+      return { name: p.name, positions: arr };
     });
   }, []);
 
@@ -284,10 +218,7 @@ function Orbits({ visible }: { visible: boolean }) {
           <bufferGeometry>
             <bufferAttribute
               attach="attributes-position"
-              args={[
-                new Float32Array(r.points.flatMap((p) => [p.x, p.y, p.z])),
-                3,
-              ]}
+              args={[r.positions, 3]}
             />
           </bufferGeometry>
           <lineBasicMaterial color="#444466" transparent opacity={0.5} />
@@ -339,6 +270,14 @@ export default function SolarSystem() {
 
   const simDaysRef = useRef(0);
 
+  // Pre-allocate reusable vectors for the frame loop
+  const _targetPos = useRef(new Vector3());
+  const _desiredPos = useRef(new Vector3());
+  const _currentTarget = useRef(new Vector3());
+  const _moveDir = useRef(new Vector3());
+  const _cameraOffset = useRef(new Vector3(0, 5, 15));
+  const _desiredCamPos = useRef(new Vector3());
+
   useFrame((_, delta) => {
     if (!paused) {
       simDaysRef.current += delta * daysPerSecond;
@@ -346,25 +285,23 @@ export default function SolarSystem() {
 
     if (cameraMode === "spaceship") {
       const moveSpeed = freeCameraSpeed * delta * 0.5;
-      const direction = new Vector3();
+      const d = _moveDir.current.set(0, 0, 0);
       if (keysPressed.current.has("w") || keysPressed.current.has("arrowup"))
-        direction.z -= 1;
+        d.z -= 1;
       if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown"))
-        direction.z += 1;
+        d.z += 1;
       if (keysPressed.current.has("a") || keysPressed.current.has("arrowleft"))
-        direction.x -= 1;
+        d.x -= 1;
       if (keysPressed.current.has("d") || keysPressed.current.has("arrowright"))
-        direction.x += 1;
-      if (direction.length() > 0) {
-        direction.normalize();
-        direction.applyQuaternion(camera.quaternion);
-        spaceshipPosition.current.addScaledVector(direction, moveSpeed);
+        d.x += 1;
+      if (d.lengthSq() > 0) {
+        d.normalize().applyQuaternion(camera.quaternion);
+        spaceshipPosition.current.addScaledVector(d, moveSpeed);
       }
-      const cameraOffset = new Vector3(0, 5, 15);
-      const desiredCameraPos = spaceshipPosition.current
-        .clone()
-        .add(cameraOffset);
-      camera.position.lerp(desiredCameraPos, 0.1);
+      _desiredCamPos.current
+        .copy(spaceshipPosition.current)
+        .add(_cameraOffset.current);
+      camera.position.lerp(_desiredCamPos.current, 0.1);
       camera.lookAt(spaceshipPosition.current);
     }
 
@@ -374,20 +311,21 @@ export default function SolarSystem() {
         targetPlanet,
         simDaysRef.current
       );
-      const targetPos = new Vector3(tx, ty, tz);
+      const tp = _targetPos.current.set(tx, ty, tz);
       const distance = Math.max(
         4,
         targetPlanet.semiMajorAxisAU * AU_TO_UNITS * 0.3
       );
-      const desiredPos = targetPos
-        .clone()
-        .add(new Vector3(distance, distance * 0.3, distance));
+      _desiredPos.current.set(
+        tx + distance,
+        ty + distance * 0.3,
+        tz + distance
+      );
       const lerpAlpha = 1 - Math.pow(0.001, delta);
       const ctrl = controlsRef.current;
-      const currentTarget = new Vector3().copy(ctrl.target);
-      currentTarget.lerp(targetPos, lerpAlpha);
-      ctrl.target.copy(currentTarget);
-      camera.position.lerp(desiredPos, lerpAlpha);
+      _currentTarget.current.copy(ctrl.target).lerp(tp, lerpAlpha);
+      ctrl.target.copy(_currentTarget.current);
+      camera.position.lerp(_desiredPos.current, lerpAlpha);
       camera.updateProjectionMatrix();
       ctrl.update();
     }
@@ -395,32 +333,17 @@ export default function SolarSystem() {
 
   return (
     <group>
-      {/* Invisible click target for pointer lock */}
-      <mesh position={[0, 0, 0]} visible={false}>
-        <boxGeometry args={[10000, 10000, 1]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
       {/* Milky Way background skybox */}
       <Suspense fallback={null}>
         <MilkyWayBackground />
       </Suspense>
 
-      {/* Multi-layer star field for nearby stars */}
+      {/* Single star layer — reduced count */}
       <Stars
-        radius={200}
-        depth={60}
-        count={6000}
-        factor={2}
-        saturation={0.2}
-        fade
-        speed={0.5}
-      />
-      <Stars
-        radius={400}
+        radius={300}
         depth={80}
-        count={8000}
-        factor={3}
+        count={4000}
+        factor={2.5}
         saturation={0.1}
         fade
         speed={0.3}
@@ -431,10 +354,10 @@ export default function SolarSystem() {
         <TexturedSun />
       </Suspense>
 
-      {/* Keplerian orbit paths */}
+      {/* Orbit paths */}
       <Orbits visible={showOrbits} />
 
-      {/* Planets */}
+      {/* Planets — position updated via refs in useFrame */}
       <PlanetsGroup simDaysRef={simDaysRef} showLabels={showLabels} />
 
       {/* Orbit controls */}
@@ -472,13 +395,14 @@ export default function SolarSystem() {
 
       <ambientLight intensity={0.06} />
 
+      {/* Lighter post-processing — smaller bloom kernel */}
       <EffectComposer>
         <Bloom
           mipmapBlur
-          intensity={1.0}
-          luminanceThreshold={0.15}
-          luminanceSmoothing={0.4}
-          kernelSize={3}
+          intensity={0.8}
+          luminanceThreshold={0.2}
+          luminanceSmoothing={0.5}
+          kernelSize={1}
         />
         <Vignette eskil={false} offset={0.15} darkness={0.5} />
       </EffectComposer>
@@ -486,6 +410,7 @@ export default function SolarSystem() {
   );
 }
 
+// Planet group that updates positions via refs each frame (no React re-renders)
 function PlanetsGroup({
   simDaysRef,
   showLabels,
@@ -494,21 +419,36 @@ function PlanetsGroup({
   showLabels: boolean;
 }) {
   const setSelected = useUiState((s) => s.setSelected);
+  const groupRefs = useRef<(Group | null)[]>(new Array(PLANETS.length).fill(null));
+
+  useFrame(() => {
+    for (let i = 0; i < PLANETS.length; i++) {
+      const g = groupRefs.current[i];
+      if (!g) continue;
+      const [x, y, z] = computeKeplerianPosition(
+        PLANETS[i],
+        simDaysRef.current
+      );
+      g.position.set(x, y, z);
+    }
+  });
+
   return (
     <group>
-      {PLANETS.map((p) => {
-        const [x, y, z] = computeKeplerianPosition(p, simDaysRef.current);
-        const pos = new Vector3(x, y, z);
-        return (
+      {PLANETS.map((p, i) => (
+        <group
+          key={p.name}
+          ref={(el) => {
+            groupRefs.current[i] = el;
+          }}
+        >
           <Planet
-            key={p.name}
             data={p}
-            position={pos}
             onClick={() => setSelected(p.name)}
             showLabel={showLabels}
           />
-        );
-      })}
+        </group>
+      ))}
     </group>
   );
 }

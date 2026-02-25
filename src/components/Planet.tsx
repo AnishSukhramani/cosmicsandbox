@@ -18,12 +18,11 @@ import { useUiState } from "@/components/state";
 
 export interface PlanetProps {
   data: PlanetData;
-  position: Vector3;
+  position?: Vector3;
   onClick?: () => void;
   showLabel?: boolean;
 }
 
-// Atmosphere Fresnel shader for realistic glow
 const atmosphereVertexShader = `
   varying vec3 vNormal;
   varying vec3 vPosition;
@@ -95,7 +94,12 @@ function getPlanetMetalness(planetName: string): number {
   }
 }
 
-/** Inner component that loads and applies the real texture */
+// Sphere segment counts — lower = faster, still looks good
+const PLANET_SEGMENTS = 48;
+const PLANET_RINGS = 24;
+const ATMO_SEGMENTS = 32;
+const ATMO_RINGS = 16;
+
 function TexturedPlanetBody({
   data,
   radius,
@@ -115,12 +119,11 @@ function TexturedPlanetBody({
 
   const textures = useTexture(texturePaths);
   const mainTexture = Array.isArray(textures) ? textures[0] : textures;
-  const cloudTexture = data.cloudMap && Array.isArray(textures) ? textures[1] : null;
+  const cloudTexture =
+    data.cloudMap && Array.isArray(textures) ? textures[1] : null;
 
   useMemo(() => {
-    if (mainTexture) {
-      mainTexture.colorSpace = SRGBColorSpace;
-    }
+    if (mainTexture) mainTexture.colorSpace = SRGBColorSpace;
     if (cloudTexture) {
       cloudTexture.wrapS = RepeatWrapping;
       cloudTexture.wrapT = RepeatWrapping;
@@ -131,9 +134,8 @@ function TexturedPlanetBody({
 
   useFrame((_, delta) => {
     if (planetRef.current) {
-      const hoursPerSecond = 24;
       const angularSpeed =
-        (Math.PI * 2) / (Math.abs(data.rotationPeriodHours) / hoursPerSecond);
+        (Math.PI * 2) / (Math.abs(data.rotationPeriodHours) / 24);
       planetRef.current.rotation.y +=
         (data.rotationPeriodHours < 0 ? -1 : 1) * angularSpeed * delta * 0.5;
     }
@@ -144,15 +146,12 @@ function TexturedPlanetBody({
 
   return (
     <>
-      {/* Main planet body with texture */}
       <mesh
         ref={planetRef}
         onPointerDown={onClick}
         scale={isSelected ? 1.08 : 1}
-        castShadow
-        receiveShadow
       >
-        <sphereGeometry args={[radius, 128, 64]} />
+        <sphereGeometry args={[radius, PLANET_SEGMENTS, PLANET_RINGS]} />
         <meshStandardMaterial
           map={mainTexture}
           roughness={getPlanetRoughness(data.name)}
@@ -160,10 +159,9 @@ function TexturedPlanetBody({
         />
       </mesh>
 
-      {/* Cloud layer */}
       {cloudTexture && (
         <mesh ref={cloudRef} scale={isSelected ? 1.08 : 1}>
-          <sphereGeometry args={[radius * 1.005, 128, 64]} />
+          <sphereGeometry args={[radius * 1.005, PLANET_SEGMENTS, PLANET_RINGS]} />
           <meshStandardMaterial
             map={cloudTexture}
             transparent
@@ -177,7 +175,6 @@ function TexturedPlanetBody({
   );
 }
 
-/** Fallback: solid-color planet when textures haven't loaded yet */
 function FallbackPlanetBody({
   data,
   radius,
@@ -193,9 +190,8 @@ function FallbackPlanetBody({
 
   useFrame((_, delta) => {
     if (planetRef.current) {
-      const hoursPerSecond = 24;
       const angularSpeed =
-        (Math.PI * 2) / (Math.abs(data.rotationPeriodHours) / hoursPerSecond);
+        (Math.PI * 2) / (Math.abs(data.rotationPeriodHours) / 24);
       planetRef.current.rotation.y +=
         (data.rotationPeriodHours < 0 ? -1 : 1) * angularSpeed * delta * 0.5;
     }
@@ -206,10 +202,8 @@ function FallbackPlanetBody({
       ref={planetRef}
       onPointerDown={onClick}
       scale={isSelected ? 1.08 : 1}
-      castShadow
-      receiveShadow
     >
-      <sphereGeometry args={[radius, 64, 32]} />
+      <sphereGeometry args={[radius, 32, 16]} />
       <meshStandardMaterial
         color={data.color}
         roughness={getPlanetRoughness(data.name)}
@@ -219,64 +213,49 @@ function FallbackPlanetBody({
   );
 }
 
-/** Saturn ring with real texture or gradient fallback */
-function SaturnRings({
-  radius,
-}: {
-  radius: number;
-}) {
+// Saturn rings using cheap MeshBasicMaterial and lower segment count
+const RING_SEGMENTS = 96;
+
+function SaturnRings({ radius }: { radius: number }) {
   return (
     <group rotation={[Math.PI / 2, 0, 0]}>
-      {/* B Ring (bright inner) */}
+      {/* B Ring */}
       <mesh>
-        <ringGeometry args={[radius * 1.3, radius * 1.7, 256]} />
-        <meshStandardMaterial
+        <ringGeometry args={[radius * 1.3, radius * 1.7, RING_SEGMENTS]} />
+        <meshBasicMaterial
           color="#c8a86e"
+          transparent
+          opacity={0.8}
+          side={DoubleSide}
+        />
+      </mesh>
+      {/* A Ring */}
+      <mesh>
+        <ringGeometry args={[radius * 1.75, radius * 2.05, RING_SEGMENTS]} />
+        <meshBasicMaterial
+          color="#d4b67a"
+          transparent
+          opacity={0.65}
+          side={DoubleSide}
+        />
+      </mesh>
+      {/* Cassini Division */}
+      <mesh>
+        <ringGeometry args={[radius * 1.7, radius * 1.75, RING_SEGMENTS]} />
+        <meshBasicMaterial
+          color="#1a1510"
           transparent
           opacity={0.85}
           side={DoubleSide}
-          roughness={0.6}
         />
       </mesh>
-      {/* A Ring (middle) */}
+      {/* C Ring */}
       <mesh>
-        <ringGeometry args={[radius * 1.75, radius * 2.05, 256]} />
-        <meshStandardMaterial
-          color="#d4b67a"
-          transparent
-          opacity={0.7}
-          side={DoubleSide}
-          roughness={0.5}
-        />
-      </mesh>
-      {/* Cassini Division (dark gap) */}
-      <mesh>
-        <ringGeometry args={[radius * 1.7, radius * 1.75, 256]} />
-        <meshStandardMaterial
-          color="#2a2015"
-          transparent
-          opacity={0.9}
-          side={DoubleSide}
-        />
-      </mesh>
-      {/* C Ring (faint inner) */}
-      <mesh>
-        <ringGeometry args={[radius * 1.15, radius * 1.3, 256]} />
-        <meshStandardMaterial
+        <ringGeometry args={[radius * 1.15, radius * 1.3, RING_SEGMENTS]} />
+        <meshBasicMaterial
           color="#a08550"
           transparent
-          opacity={0.3}
-          side={DoubleSide}
-          roughness={0.8}
-        />
-      </mesh>
-      {/* F Ring (thin outer) */}
-      <mesh>
-        <ringGeometry args={[radius * 2.08, radius * 2.12, 256]} />
-        <meshStandardMaterial
-          color="#b09060"
-          transparent
-          opacity={0.4}
+          opacity={0.25}
           side={DoubleSide}
         />
       </mesh>
@@ -312,15 +291,15 @@ const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
       position={position}
       rotation={[0, 0, (data.axialTiltDeg * Math.PI) / 180]}
     >
-      {/* Atmosphere glow (Fresnel shader) */}
+      {/* Atmosphere glow */}
       {atmosphereMaterial && (
         <mesh scale={isSelected ? 1.12 : 1.04}>
-          <sphereGeometry args={[radius * 1.12, 64, 32]} />
+          <sphereGeometry args={[radius * 1.12, ATMO_SEGMENTS, ATMO_RINGS]} />
           <primitive object={atmosphereMaterial} />
         </mesh>
       )}
 
-      {/* Planet body with real texture (Suspense fallback to solid color) */}
+      {/* Planet body */}
       <Suspense
         fallback={
           <FallbackPlanetBody
