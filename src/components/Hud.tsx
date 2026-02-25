@@ -111,8 +111,8 @@ export default function Hud() {
         <div className="self-start bg-black/50 rounded-2xl p-3 text-xs backdrop-blur">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-full overflow-hidden ring-1 ring-white/20">
-              {((hiResTextures ? planet.textureUrl : planet.textureUrlLo) ?? planet.textureUrl) ? (
-                <img src={(hiResTextures ? planet.textureUrl : planet.textureUrlLo) ?? planet.textureUrl} alt={planet.name} className="h-full w-full object-cover" />
+              {planet.texture ? (
+                <img src={planet.texture} alt={planet.name} className="h-full w-full object-cover" />
               ) : (
                 <div className="h-full w-full bg-gray-600 flex items-center justify-center text-xs text-white/70">
                   {planet.name.charAt(0)}
