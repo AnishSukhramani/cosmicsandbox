@@ -18,13 +18,11 @@ export interface PlanetData {
   axialTiltDeg: number;
   color: string;
   hasRings?: boolean;
-  // Keplerian orbital elements (J2000 epoch)
   eccentricity: number;
   inclinationDeg: number;
   longitudeAscNodeDeg: number;
   argPerihelionDeg: number;
   meanAnomalyJ2000Deg: number;
-  // Texture paths (served from public/)
   texture: string;
   normalMap?: string;
   cloudMap?: string;
@@ -32,11 +30,42 @@ export interface PlanetData {
   ringTexture?: string;
 }
 
-// J2000 epoch orbital data from NASA JPL Horizons
+// ---------------------------------------------------------------------------
+// SCALE SYSTEM — two separate but internally-consistent scales
+//
+// 1) ORBITAL SCALE  (AU → world units)
+//    1 AU = 10 world units.  All orbital distances preserve the exact real
+//    ratios between planets.
+//
+//      Mercury  0.387 AU →   3.87 u        Earth  1.00 AU →  10.0 u
+//      Jupiter  5.20  AU →  52.0  u        Neptune 30.1 AU → 301  u
+//      Pluto   39.5   AU → 395   u
+//
+// 2) BODY SCALE  (km → world units)
+//    All planet *radii* are multiplied by the same constant so their size
+//    ratios are exact (Jupiter is 10.97× Earth, Mercury is 0.383× Earth, etc.)
+//    The constant is chosen so Earth ≈ 0.13 u, Jupiter ≈ 1.4 u — visible
+//    while not swallowing their own orbits.
+//
+//    The Sun is a special case: at the planet body scale its 696 340 km radius
+//    would be 13.9 u, larger than Mercury's orbit (3.87 u).  So it uses a
+//    separate display radius (SUN_DISPLAY_RADIUS) that keeps it dominant but
+//    not orbit-swallowing.  This is the standard trade-off every solar-system
+//    simulator makes — the alternative is sub-pixel planets.
+// ---------------------------------------------------------------------------
+
+export const AU_TO_UNITS = 10;
+
+export const BODY_KM_TO_UNITS = 0.00002;
+
+export const SUN_RADIUS_KM = 696_340;
+export const SUN_DISPLAY_RADIUS = 2.0;
+
+// J2000 epoch orbital data — NASA JPL Horizons
 export const PLANETS: PlanetData[] = [
   {
     name: "Mercury",
-    radiusKm: 2440,
+    radiusKm: 2_440,
     semiMajorAxisAU: 0.3871,
     orbitalPeriodDays: 87.97,
     rotationPeriodHours: 1407.6,
@@ -51,7 +80,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Venus",
-    radiusKm: 6052,
+    radiusKm: 6_052,
     semiMajorAxisAU: 0.7233,
     orbitalPeriodDays: 224.7,
     rotationPeriodHours: -5832.5,
@@ -67,7 +96,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Earth",
-    radiusKm: 6371,
+    radiusKm: 6_371,
     semiMajorAxisAU: 1.0,
     orbitalPeriodDays: 365.256,
     rotationPeriodHours: 23.934,
@@ -84,7 +113,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Mars",
-    radiusKm: 3390,
+    radiusKm: 3_390,
     semiMajorAxisAU: 1.5237,
     orbitalPeriodDays: 686.98,
     rotationPeriodHours: 24.623,
@@ -99,7 +128,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Jupiter",
-    radiusKm: 69911,
+    radiusKm: 69_911,
     semiMajorAxisAU: 5.2026,
     orbitalPeriodDays: 4332.59,
     rotationPeriodHours: 9.925,
@@ -114,7 +143,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Saturn",
-    radiusKm: 58232,
+    radiusKm: 58_232,
     semiMajorAxisAU: 9.5549,
     orbitalPeriodDays: 10759.22,
     rotationPeriodHours: 10.656,
@@ -131,7 +160,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Uranus",
-    radiusKm: 25362,
+    radiusKm: 25_362,
     semiMajorAxisAU: 19.2184,
     orbitalPeriodDays: 30688.5,
     rotationPeriodHours: -17.24,
@@ -146,7 +175,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Neptune",
-    radiusKm: 24622,
+    radiusKm: 24_622,
     semiMajorAxisAU: 30.069,
     orbitalPeriodDays: 60182.0,
     rotationPeriodHours: 16.11,
@@ -161,7 +190,7 @@ export const PLANETS: PlanetData[] = [
   },
   {
     name: "Pluto",
-    radiusKm: 1188,
+    radiusKm: 1_188,
     semiMajorAxisAU: 39.482,
     orbitalPeriodDays: 90560,
     rotationPeriodHours: -153.3,
@@ -176,15 +205,18 @@ export const PLANETS: PlanetData[] = [
   },
 ];
 
-export const AU_TO_UNITS = 2;
-export const KM_TO_UNITS = 0.00005;
-
 const DEG2RAD = Math.PI / 180;
 
 /**
- * Solve Kepler's equation M = E - e*sin(E) for eccentric anomaly E
- * using Newton-Raphson iteration.
+ * Compute the number of days since J2000.0 epoch (2000-01-01 12:00 TT)
+ * for the current wall-clock time. This is used to seed the simulation
+ * so that planet positions match their real positions right now.
  */
+export function daysSinceJ2000(date: Date = new Date()): number {
+  const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
+  return (date.getTime() - J2000_MS) / 86_400_000;
+}
+
 function solveKepler(M: number, e: number): number {
   let E = M;
   for (let i = 0; i < 20; i++) {
@@ -195,10 +227,6 @@ function solveKepler(M: number, e: number): number {
   return E;
 }
 
-/**
- * Compute the 3D heliocentric position of a planet at a given simulation
- * time using full Keplerian orbital mechanics.
- */
 export function computeKeplerianPosition(
   planet: PlanetData,
   simDays: number
@@ -209,28 +237,19 @@ export function computeKeplerianPosition(
   const omega = planet.argPerihelionDeg * DEG2RAD;
   const M0 = planet.meanAnomalyJ2000Deg * DEG2RAD;
 
-  // Mean motion (radians per day)
   const n = (2 * Math.PI) / orbitalPeriodDays;
-
-  // Mean anomaly at simulation time
   const M = M0 + n * simDays;
-
-  // Solve Kepler's equation
   const E = solveKepler(M, e);
 
-  // True anomaly
   const sinNu = (Math.sqrt(1 - e * e) * Math.sin(E)) / (1 - e * Math.cos(E));
   const cosNu = (Math.cos(E) - e) / (1 - e * Math.cos(E));
   const nu = Math.atan2(sinNu, cosNu);
 
-  // Distance from Sun
   const r = semiMajorAxisAU * (1 - e * Math.cos(E));
 
-  // Position in orbital plane
   const xOrb = r * Math.cos(nu);
   const yOrb = r * Math.sin(nu);
 
-  // Transform to 3D heliocentric coordinates (ecliptic)
   const cosO = Math.cos(Omega);
   const sinO = Math.sin(Omega);
   const cosw = Math.cos(omega);

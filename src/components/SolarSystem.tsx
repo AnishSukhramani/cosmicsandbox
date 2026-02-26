@@ -13,11 +13,26 @@ import {
   Group,
   TextureLoader,
   EquirectangularReflectionMapping,
+  BufferGeometry,
+  Float32BufferAttribute,
+  PointsMaterial,
+  Points,
 } from "three";
 import Planet from "@/components/Planet";
+import MoonComponent from "@/components/Moon";
 import Spaceship from "@/components/Spaceship";
-import { AU_TO_UNITS, PLANETS, computeKeplerianPosition } from "@/lib/planets";
+import {
+  PLANETS,
+  computeKeplerianPosition,
+  SUN_DISPLAY_RADIUS,
+  BODY_KM_TO_UNITS,
+  daysSinceJ2000,
+  AU_TO_UNITS,
+} from "@/lib/planets";
+import { MOONS } from "@/lib/moons";
 import { useUiState } from "@/components/state";
+
+// ─── Hooks ──────────────────────────────────────────────────────────────────
 
 function useEnhancedZoom(
   controlsRef: React.RefObject<OrbitControlsImpl | null>
@@ -29,10 +44,7 @@ function useEnhancedZoom(
         event.preventDefault();
         const delta = event.deltaY;
         const distance = controlsRef.current.getDistance();
-        const newDistance = Math.max(
-          0.5,
-          Math.min(1000, distance + delta * 0.1)
-        );
+        const newDistance = Math.max(0.3, Math.min(2000, distance + delta * 0.1));
         controlsRef.current.object.getWorldDirection(dirVec.current);
         controlsRef.current.object.position.addScaledVector(
           dirVec.current,
@@ -59,40 +71,22 @@ function useFreeCamera(
 
   useEffect(() => {
     if (cameraMode !== "free" && cameraMode !== "spaceship") return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      keysPressed.current.add(event.key.toLowerCase());
-    };
-    const handleKeyUp = (event: KeyboardEvent) => {
-      keysPressed.current.delete(event.key.toLowerCase());
-    };
+    const handleKeyDown = (event: KeyboardEvent) => keysPressed.current.add(event.key.toLowerCase());
+    const handleKeyUp = (event: KeyboardEvent) => keysPressed.current.delete(event.key.toLowerCase());
     const handleMouseMove = (event: MouseEvent) => {
-      if (isPointerLocked.current) {
-        const sensitivity = 0.002;
-        yaw.current -= event.movementX * sensitivity;
-        pitch.current -= event.movementY * sensitivity;
-        pitch.current = Math.max(
-          -Math.PI / 2 + 0.1,
-          Math.min(Math.PI / 2 - 0.1, pitch.current)
-        );
-        camera.rotation.set(0, 0, 0);
-        camera.rotateY(yaw.current);
-        camera.rotateX(pitch.current);
-      }
+      if (!isPointerLocked.current) return;
+      yaw.current -= event.movementX * 0.002;
+      pitch.current = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch.current - event.movementY * 0.002));
+      camera.rotation.set(0, 0, 0);
+      camera.rotateY(yaw.current);
+      camera.rotateX(pitch.current);
     };
-    const handlePointerLockChange = () => {
-      isPointerLocked.current = document.pointerLockElement !== null;
-    };
+    const handlePointerLockChange = () => { isPointerLocked.current = document.pointerLockElement !== null; };
     const handleClick = () => {
-      if (
-        (cameraMode === "free" || cameraMode === "spaceship") &&
-        !isPointerLocked.current
-      ) {
-        const canvas = document.querySelector("canvas");
-        if (canvas) canvas.requestPointerLock().catch(() => {});
+      if ((cameraMode === "free" || cameraMode === "spaceship") && !isPointerLocked.current) {
+        document.querySelector("canvas")?.requestPointerLock().catch(() => {});
       }
     };
-
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("keyup", handleKeyUp);
     document.addEventListener("mousemove", handleMouseMove);
@@ -109,36 +103,27 @@ function useFreeCamera(
 
   useFrame((_, delta) => {
     if (cameraMode !== "free" && cameraMode !== "spaceship") return;
-    const moveSpeed = freeCameraSpeed * delta * 0.5;
     const d = moveDir.current.set(0, 0, 0);
-    if (keysPressed.current.has("w") || keysPressed.current.has("arrowup"))
-      d.z -= 1;
-    if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown"))
-      d.z += 1;
-    if (keysPressed.current.has("a") || keysPressed.current.has("arrowleft"))
-      d.x -= 1;
-    if (keysPressed.current.has("d") || keysPressed.current.has("arrowright"))
-      d.x += 1;
+    if (keysPressed.current.has("w") || keysPressed.current.has("arrowup")) d.z -= 1;
+    if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown")) d.z += 1;
+    if (keysPressed.current.has("a") || keysPressed.current.has("arrowleft")) d.x -= 1;
+    if (keysPressed.current.has("d") || keysPressed.current.has("arrowright")) d.x += 1;
     if (d.lengthSq() > 0) {
       d.normalize().applyQuaternion(camera.quaternion);
-      camera.position.addScaledVector(d, moveSpeed);
+      camera.position.addScaledVector(d, freeCameraSpeed * delta * 0.5);
     }
   });
 }
 
-const SUN_RADIUS_UNITS = 1.2;
+// ─── Sub-components ─────────────────────────────────────────────────────────
 
-// Textured Sun — minimal geometry, meshBasicMaterial only
+const SUN_RADIUS_UNITS = SUN_DISPLAY_RADIUS;
+
 function TexturedSun() {
   const sunTexture = useTexture("/textures/2k_sun.jpg");
   const sunRef = useRef<Mesh>(null);
-  useMemo(() => {
-    sunTexture.colorSpace = SRGBColorSpace;
-  }, [sunTexture]);
-
-  useFrame((_, delta) => {
-    if (sunRef.current) sunRef.current.rotation.y += delta * 0.03;
-  });
+  useMemo(() => { sunTexture.colorSpace = SRGBColorSpace; }, [sunTexture]);
+  useFrame((_, delta) => { if (sunRef.current) sunRef.current.rotation.y += delta * 0.03; });
 
   return (
     <group>
@@ -148,15 +133,9 @@ function TexturedSun() {
       </mesh>
       <mesh>
         <sphereGeometry args={[SUN_RADIUS_UNITS * 1.25, 16, 8]} />
-        <meshBasicMaterial
-          color="#ffaa22"
-          transparent
-          opacity={0.12}
-          blending={AdditiveBlending}
-          toneMapped={false}
-        />
+        <meshBasicMaterial color="#ffaa22" transparent opacity={0.12} blending={AdditiveBlending} toneMapped={false} />
       </mesh>
-      <pointLight color="#ffd9a3" intensity={8} distance={2000} decay={2} />
+      <pointLight color="#ffd9a3" intensity={50} distance={5000} decay={2} />
     </group>
   );
 }
@@ -168,16 +147,15 @@ function FallbackSun() {
         <sphereGeometry args={[SUN_RADIUS_UNITS, 32, 16]} />
         <meshBasicMaterial color="#ffdd99" toneMapped={false} />
       </mesh>
-      <pointLight color="#ffd9a3" intensity={8} distance={2000} decay={2} />
+      <pointLight color="#ffd9a3" intensity={50} distance={5000} decay={2} />
     </group>
   );
 }
 
-// Orbit lines — reduced resolution
 function Orbits({ visible }: { visible: boolean }) {
   const rings = useMemo(() => {
     return PLANETS.map((p) => {
-      const steps = 80;
+      const steps = 100;
       const arr = new Float32Array((steps + 1) * 3);
       for (let j = 0; j <= steps; j++) {
         const simDays = (j / steps) * p.orbitalPeriodDays;
@@ -195,44 +173,61 @@ function Orbits({ visible }: { visible: boolean }) {
       {rings.map((r) => (
         <line key={r.name}>
           <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              args={[r.positions, 3]}
-            />
+            <bufferAttribute attach="attributes-position" args={[r.positions, 3]} />
           </bufferGeometry>
-          <lineBasicMaterial color="#444466" transparent opacity={0.5} />
+          <lineBasicMaterial color="#334466" transparent opacity={0.4} />
         </line>
       ))}
     </group>
   );
 }
 
-// Set scene.background to equirectangular Milky Way texture (no extra mesh)
 function SceneBackground() {
   const { scene } = useThree();
-  const bgTexture = useLoader(TextureLoader, "/textures/2k_stars_milky_way.jpg");
+  const bgTexture = useLoader(TextureLoader, "/textures/8k_stars_milky_way.jpg");
   useEffect(() => {
     bgTexture.mapping = EquirectangularReflectionMapping;
     bgTexture.colorSpace = SRGBColorSpace;
     scene.background = bgTexture;
-    return () => {
-      scene.background = new Color("#000005");
-    };
+    return () => { scene.background = new Color("#000005"); };
   }, [bgTexture, scene]);
   return null;
 }
+
+function AsteroidBelt() {
+  const geometry = useMemo(() => {
+    const count = 1500;
+    const positions = new Float32Array(count * 3);
+    const innerAU = 2.1;
+    const outerAU = 3.3;
+    for (let i = 0; i < count; i++) {
+      const r = (innerAU + Math.random() * (outerAU - innerAU)) * AU_TO_UNITS;
+      const angle = Math.random() * Math.PI * 2;
+      const y = (Math.random() - 0.5) * 0.8;
+      positions[i * 3] = Math.cos(angle) * r;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = Math.sin(angle) * r;
+    }
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    return geo;
+  }, []);
+
+  const material = useMemo(
+    () => new PointsMaterial({ color: "#887766", size: 0.08, transparent: true, opacity: 0.6, sizeAttenuation: true }),
+    []
+  );
+
+  return <primitive object={new Points(geometry, material)} />;
+}
+
+// ─── Main ───────────────────────────────────────────────────────────────────
 
 export default function SolarSystem() {
   const { camera, scene } = useThree();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const {
-    selected,
-    showOrbits,
-    showLabels,
-    paused,
-    daysPerSecond,
-    cameraMode,
-    freeCameraSpeed,
+    selected, showOrbits, showLabels, paused, daysPerSecond, cameraMode, freeCameraSpeed,
   } = useUiState();
 
   const spaceshipPosition = useRef(new Vector3(0, 0, 0));
@@ -243,26 +238,19 @@ export default function SolarSystem() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "f" || event.key === "F") {
-        event.preventDefault();
-        useUiState.getState().toggleCameraMode();
-      } else if (event.key === "r" || event.key === "R") {
-        event.preventDefault();
-        useUiState.getState().resetCamera();
-      } else if (event.key === "Escape") {
-        document.exitPointerLock();
-      }
+      if (event.key === "f" || event.key === "F") { event.preventDefault(); useUiState.getState().toggleCameraMode(); }
+      else if (event.key === "r" || event.key === "R") { event.preventDefault(); useUiState.getState().resetCamera(); }
+      else if (event.key === "Escape") document.exitPointerLock();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Fallback background color while texture loads
-  useEffect(() => {
-    scene.background = new Color("#000005");
-  }, [scene]);
+  useEffect(() => { scene.background = new Color("#000005"); }, [scene]);
 
-  const simDaysRef = useRef(0);
+  // Seed the simulation at the *current real date* so positions match reality
+  const simDaysRef = useRef(daysSinceJ2000());
+
   const _targetPos = useRef(new Vector3());
   const _desiredPos = useRef(new Vector3());
   const _currentTarget = useRef(new Vector3());
@@ -271,48 +259,35 @@ export default function SolarSystem() {
   const _desiredCamPos = useRef(new Vector3());
 
   useFrame((_, delta) => {
+    // At 1× speed, 1 real second = 1 simulation day (so you can see orbits move).
+    // The HUD shows the multiplier. Actual real-time would be imperceptibly slow
+    // for outer planets, so 1× = 1 day/s is the standard planetarium convention.
     if (!paused) {
       simDaysRef.current += delta * daysPerSecond;
     }
 
     if (cameraMode === "spaceship") {
-      const moveSpeed = freeCameraSpeed * delta * 0.5;
       const d = _moveDir.current.set(0, 0, 0);
-      if (keysPressed.current.has("w") || keysPressed.current.has("arrowup"))
-        d.z -= 1;
-      if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown"))
-        d.z += 1;
-      if (keysPressed.current.has("a") || keysPressed.current.has("arrowleft"))
-        d.x -= 1;
-      if (keysPressed.current.has("d") || keysPressed.current.has("arrowright"))
-        d.x += 1;
+      if (keysPressed.current.has("w") || keysPressed.current.has("arrowup")) d.z -= 1;
+      if (keysPressed.current.has("s") || keysPressed.current.has("arrowdown")) d.z += 1;
+      if (keysPressed.current.has("a") || keysPressed.current.has("arrowleft")) d.x -= 1;
+      if (keysPressed.current.has("d") || keysPressed.current.has("arrowright")) d.x += 1;
       if (d.lengthSq() > 0) {
         d.normalize().applyQuaternion(camera.quaternion);
-        spaceshipPosition.current.addScaledVector(d, moveSpeed);
+        spaceshipPosition.current.addScaledVector(d, freeCameraSpeed * delta * 0.5);
       }
-      _desiredCamPos.current
-        .copy(spaceshipPosition.current)
-        .add(_cameraOffset.current);
+      _desiredCamPos.current.copy(spaceshipPosition.current).add(_cameraOffset.current);
       camera.position.lerp(_desiredCamPos.current, 0.1);
       camera.lookAt(spaceshipPosition.current);
     }
 
     const targetPlanet = PLANETS.find((p) => p.name === selected);
     if (targetPlanet && controlsRef.current && cameraMode === "follow") {
-      const [tx, ty, tz] = computeKeplerianPosition(
-        targetPlanet,
-        simDaysRef.current
-      );
+      const [tx, ty, tz] = computeKeplerianPosition(targetPlanet, simDaysRef.current);
       const tp = _targetPos.current.set(tx, ty, tz);
-      const distance = Math.max(
-        4,
-        targetPlanet.semiMajorAxisAU * AU_TO_UNITS * 0.3
-      );
-      _desiredPos.current.set(
-        tx + distance,
-        ty + distance * 0.3,
-        tz + distance
-      );
+      const bodyRadius = targetPlanet.radiusKm * BODY_KM_TO_UNITS;
+      const distance = Math.max(bodyRadius * 8, 3);
+      _desiredPos.current.set(tx + distance, ty + distance * 0.35, tz + distance);
       const lerpAlpha = 1 - Math.pow(0.001, delta);
       const ctrl = controlsRef.current;
       _currentTarget.current.copy(ctrl.target).lerp(tp, lerpAlpha);
@@ -325,41 +300,24 @@ export default function SolarSystem() {
 
   return (
     <group>
-      {/* Milky Way as scene.background — zero extra draw calls */}
-      <Suspense fallback={null}>
-        <SceneBackground />
-      </Suspense>
+      <Suspense fallback={null}><SceneBackground /></Suspense>
 
-      {/* NO Stars particle system — too expensive in software WebGL */}
-      {/* NO EffectComposer / Bloom / Vignette — too expensive in software WebGL */}
+      <Suspense fallback={<FallbackSun />}><TexturedSun /></Suspense>
 
-      {/* Textured Sun */}
-      <Suspense fallback={<FallbackSun />}>
-        <TexturedSun />
-      </Suspense>
-
-      {/* Orbit paths */}
       <Orbits visible={showOrbits} />
 
-      {/* Planets */}
+      <AsteroidBelt />
+
       <PlanetsGroup simDaysRef={simDaysRef} showLabels={showLabels} />
 
-      {/* Orbit controls */}
       {cameraMode !== "free" && cameraMode !== "spaceship" && (
         <OrbitControls
           ref={controlsRef}
-          enableDamping
-          dampingFactor={0.05}
-          minDistance={0.5}
-          maxDistance={1000}
-          enablePan
-          enableZoom
-          enableRotate
-          zoomSpeed={1.2}
-          panSpeed={1.0}
-          rotateSpeed={0.8}
-          maxPolarAngle={Math.PI}
-          minPolarAngle={0}
+          enableDamping dampingFactor={0.05}
+          minDistance={0.3} maxDistance={2000}
+          enablePan enableZoom enableRotate
+          zoomSpeed={1.2} panSpeed={1.0} rotateSpeed={0.8}
+          maxPolarAngle={Math.PI} minPolarAngle={0}
           target={[0, 0, 0]}
         />
       )}
@@ -367,13 +325,7 @@ export default function SolarSystem() {
       {cameraMode === "spaceship" && (
         <Spaceship
           position={spaceshipPosition.current}
-          rotation={
-            new Vector3(
-              camera.rotation.x,
-              camera.rotation.y,
-              camera.rotation.z
-            )
-          }
+          rotation={new Vector3(camera.rotation.x, camera.rotation.y, camera.rotation.z)}
         />
       )}
 
@@ -381,6 +333,8 @@ export default function SolarSystem() {
     </group>
   );
 }
+
+// ─── Planet group with moons ────────────────────────────────────────────────
 
 function PlanetsGroup({
   simDaysRef,
@@ -390,18 +344,23 @@ function PlanetsGroup({
   showLabels: boolean;
 }) {
   const setSelected = useUiState((s) => s.setSelected);
-  const groupRefs = useRef<(Group | null)[]>(
-    new Array(PLANETS.length).fill(null)
-  );
+  const groupRefs = useRef<(Group | null)[]>(new Array(PLANETS.length).fill(null));
+
+  // Pre-compute which moons belong to which planet
+  const moonsByPlanet = useMemo(() => {
+    const map: Record<string, typeof MOONS> = {};
+    for (const m of MOONS) {
+      if (!map[m.parentPlanet]) map[m.parentPlanet] = [];
+      map[m.parentPlanet].push(m);
+    }
+    return map;
+  }, []);
 
   useFrame(() => {
     for (let i = 0; i < PLANETS.length; i++) {
       const g = groupRefs.current[i];
       if (!g) continue;
-      const [x, y, z] = computeKeplerianPosition(
-        PLANETS[i],
-        simDaysRef.current
-      );
+      const [x, y, z] = computeKeplerianPosition(PLANETS[i], simDaysRef.current);
       g.position.set(x, y, z);
     }
   });
@@ -409,17 +368,17 @@ function PlanetsGroup({
   return (
     <group>
       {PLANETS.map((p, i) => (
-        <group
-          key={p.name}
-          ref={(el) => {
-            groupRefs.current[i] = el;
-          }}
-        >
-          <Planet
-            data={p}
-            onClick={() => setSelected(p.name)}
-            showLabel={showLabels}
-          />
+        <group key={p.name} ref={(el) => { groupRefs.current[i] = el; }}>
+          <Planet data={p} onClick={() => setSelected(p.name)} showLabel={showLabels} />
+          {/* Render moons for this planet */}
+          {moonsByPlanet[p.name]?.map((moon) => (
+            <MoonComponent
+              key={moon.name}
+              moon={moon}
+              simDaysRef={simDaysRef}
+              showLabel={showLabels}
+            />
+          ))}
         </group>
       ))}
     </group>

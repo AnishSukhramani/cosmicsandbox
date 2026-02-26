@@ -7,10 +7,10 @@ interface UiState {
   showOrbits: boolean;
   showLabels: boolean;
   paused: boolean;
-  daysPerSecond: number; // simulation speed
+  daysPerSecond: number;
   hiResTextures: boolean;
-  cameraMode: "free" | "follow" | "spaceship"; // free camera, follow selected planet, or spaceship mode
-  freeCameraSpeed: number; // movement speed for free camera
+  cameraMode: "free" | "follow" | "spaceship";
+  freeCameraSpeed: number;
   setSelected: (name: PlanetName | null) => void;
   toggleOrbits: () => void;
   toggleLabels: () => void;
@@ -28,7 +28,7 @@ export const useUiState = create<UiState>((set) => ({
   showOrbits: true,
   showLabels: true,
   paused: false,
-  daysPerSecond: 20,
+  daysPerSecond: 1,
   hiResTextures: false,
   cameraMode: "follow",
   freeCameraSpeed: 50,
@@ -38,8 +38,14 @@ export const useUiState = create<UiState>((set) => ({
   togglePaused: () => set((s) => ({ paused: !s.paused })),
   setDaysPerSecond: (v) => set({ daysPerSecond: v }),
   toggleHiResTextures: () => set((s) => ({ hiResTextures: !s.hiResTextures })),
-      toggleCameraMode: () => set((s) => ({ 
-      cameraMode: s.cameraMode === "free" ? "follow" : s.cameraMode === "follow" ? "spaceship" : "free" 
+  toggleCameraMode: () =>
+    set((s) => ({
+      cameraMode:
+        s.cameraMode === "free"
+          ? "follow"
+          : s.cameraMode === "follow"
+            ? "spaceship"
+            : "free",
     })),
   setCameraMode: (mode) => set({ cameraMode: mode }),
   resetCamera: () => set({ selected: "Earth", cameraMode: "follow" }),

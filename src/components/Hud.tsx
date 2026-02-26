@@ -1,199 +1,141 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useUiState } from "@/components/state";
-import { PLANETS } from "@/lib/planets";
+import { PLANETS, daysSinceJ2000 } from "@/lib/planets";
 import type { PlanetName } from "@/lib/planets";
+
+function SimulationDate({ daysPerSecond, paused }: { daysPerSecond: number; paused: boolean }) {
+  const [simDays, setSimDays] = useState(daysSinceJ2000());
+
+  useEffect(() => {
+    if (paused) return;
+    const interval = setInterval(() => {
+      setSimDays((d) => d + (daysPerSecond * 0.1));
+    }, 100);
+    return () => clearInterval(interval);
+  }, [daysPerSecond, paused]);
+
+  const date = useMemo(() => {
+    const j2000Ms = Date.UTC(2000, 0, 1, 12, 0, 0);
+    const d = new Date(j2000Ms + simDays * 86_400_000);
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  }, [simDays]);
+
+  return <span className="font-mono text-[11px] text-cyan-300/80">{date}</span>;
+}
 
 export default function Hud() {
   const {
-    selected,
-    showOrbits,
-    showLabels,
-    paused,
-    daysPerSecond,
-    hiResTextures,
-    cameraMode,
-    freeCameraSpeed,
-    setSelected,
-    toggleLabels,
-    toggleOrbits,
-    togglePaused,
-    setDaysPerSecond,
-    toggleHiResTextures,
-    toggleCameraMode,
-    resetCamera,
-    setFreeCameraSpeed,
+    selected, showOrbits, showLabels, paused, daysPerSecond,
+    cameraMode, freeCameraSpeed,
+    setSelected, toggleLabels, toggleOrbits, togglePaused,
+    setDaysPerSecond, toggleCameraMode, resetCamera, setFreeCameraSpeed,
   } = useUiState();
 
   const planet = useMemo(() => PLANETS.find((p) => p.name === selected) ?? null, [selected]);
 
   return (
-    <div className="pointer-events-auto absolute inset-x-0 top-0 p-4 flex flex-col gap-3 text-white">
-      <div className="flex items-center justify-between gap-4">
+    <div className="pointer-events-auto absolute inset-x-0 top-0 p-3 flex flex-col gap-2 text-white select-none">
+      {/* Top bar */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-lg font-semibold">Solar 3D</span>
-          <span className="text-xs opacity-70">(click a planet to focus)</span>
-          <div className={`px-2 py-1 rounded text-xs ${
-            cameraMode === "free" 
-              ? "bg-blue-600/80 text-white" 
-              : "bg-green-600/80 text-white"
+          <span className="text-base font-bold tracking-wide">Cosmic Sandbox</span>
+          <SimulationDate daysPerSecond={daysPerSecond} paused={paused} />
+          <div className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider ${
+            cameraMode === "free" ? "bg-blue-500/60" : cameraMode === "spaceship" ? "bg-purple-500/60" : "bg-emerald-500/60"
           }`}>
-            {cameraMode === "free" ? "Free Camera" : "Follow Mode"}
+            {cameraMode === "free" ? "Free Cam" : cameraMode === "follow" ? "Follow" : "Ship"}
           </div>
-          {cameraMode === "free" && (
-            <div className="px-2 py-1 rounded text-xs bg-yellow-600/80 text-white animate-pulse">
-              Click to Lock Mouse
-            </div>
-          )}
         </div>
-        <div className="flex items-center gap-3 bg-black/40 rounded-xl px-3 py-2">
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={showOrbits} onChange={toggleOrbits} />
+
+        {/* Controls bar */}
+        <div className="flex items-center gap-2 bg-black/50 backdrop-blur-md rounded-lg px-3 py-1.5 border border-white/10">
+          <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+            <input type="checkbox" checked={showOrbits} onChange={toggleOrbits} className="w-3 h-3 accent-cyan-400" />
             Orbits
           </label>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={showLabels} onChange={toggleLabels} />
+          <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+            <input type="checkbox" checked={showLabels} onChange={toggleLabels} className="w-3 h-3 accent-cyan-400" />
             Labels
           </label>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={paused} onChange={togglePaused} />
+          <div className="w-px h-4 bg-white/20" />
+          <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+            <input type="checkbox" checked={paused} onChange={togglePaused} className="w-3 h-3 accent-amber-400" />
             Pause
           </label>
-          <div className="flex items-center gap-2 text-xs">
-            <span>Speed</span>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <span className="opacity-60">Speed</span>
             <input
-              type="range"
-              min={1}
-              max={200}
-              value={daysPerSecond}
+              type="range" min={1} max={365} value={daysPerSecond}
               onChange={(e) => setDaysPerSecond(Number(e.target.value))}
+              className="w-20 h-1 accent-cyan-400"
             />
-            <span className="tabular-nums w-10 text-right">{daysPerSecond}×</span>
+            <span className="font-mono w-12 text-right text-cyan-300/80">{daysPerSecond} d/s</span>
           </div>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={hiResTextures} onChange={toggleHiResTextures} />
-            Hi-res textures
-          </label>
-          <button
-            onClick={toggleCameraMode}
-            className={`px-2 py-1 rounded text-xs transition-colors ${
-              cameraMode === "free" 
-                ? "bg-blue-600 text-white" 
-                : "bg-white/20 text-white hover:bg-white/30"
-            }`}
-          >
-            {cameraMode === "free" ? "Free Cam" : cameraMode === "follow" ? "Follow" : "Spaceship"}
+          <div className="w-px h-4 bg-white/20" />
+          <button onClick={toggleCameraMode}
+            className="px-2 py-0.5 rounded text-[10px] bg-white/10 hover:bg-white/20 transition-colors">
+            {cameraMode === "free" ? "Free" : cameraMode === "follow" ? "Follow" : "Ship"}
           </button>
-          <button
-            onClick={resetCamera}
-            className="px-2 py-1 rounded text-xs bg-white/20 text-white hover:bg-white/30 transition-colors"
-          >
+          <button onClick={resetCamera}
+            className="px-2 py-0.5 rounded text-[10px] bg-white/10 hover:bg-white/20 transition-colors">
             Reset
           </button>
           {(cameraMode === "free" || cameraMode === "spaceship") && (
-            <div className="flex items-center gap-2 text-xs">
-              <span>Speed</span>
+            <div className="flex items-center gap-1 text-[10px]">
               <input
-                type="range"
-                min={10}
-                max={200}
-                value={freeCameraSpeed}
+                type="range" min={10} max={200} value={freeCameraSpeed}
                 onChange={(e) => setFreeCameraSpeed(Number(e.target.value))}
-                className="w-16"
+                className="w-14 h-1 accent-cyan-400"
               />
-              <span className="tabular-nums w-8 text-right">{freeCameraSpeed}</span>
+              <span className="font-mono w-6 text-right opacity-60">{freeCameraSpeed}</span>
             </div>
           )}
         </div>
       </div>
 
+      {/* Planet info panel */}
       {planet && (
-        <div className="self-start bg-black/50 rounded-2xl p-3 text-xs backdrop-blur">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full overflow-hidden ring-1 ring-white/20">
+        <div className="self-start bg-black/50 backdrop-blur-md rounded-xl p-3 border border-white/10 max-w-xs">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-9 w-9 rounded-full overflow-hidden ring-1 ring-white/20 shrink-0">
               {planet.texture ? (
                 <img src={planet.texture} alt={planet.name} className="h-full w-full object-cover" />
               ) : (
-                <div className="h-full w-full bg-gray-600 flex items-center justify-center text-xs text-white/70">
+                <div className="h-full w-full bg-gray-700 flex items-center justify-center text-[10px] text-white/60">
                   {planet.name.charAt(0)}
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="opacity-70">Selected:</span>
+            <div>
               <select
-                className="bg-black/30 rounded px-2 py-1"
+                className="bg-transparent text-sm font-semibold appearance-none cursor-pointer outline-none"
                 value={planet.name}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  setSelected(e.target.value as PlanetName)
-                }
+                onChange={(e) => setSelected(e.target.value as PlanetName)}
               >
                 {PLANETS.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name}
-                  </option>
+                  <option key={p.name} value={p.name} className="bg-gray-900">{p.name}</option>
                 ))}
               </select>
             </div>
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 opacity-95">
-            <div className="flex items-baseline gap-1"><span className="opacity-70">Radius</span><span className="tabular-nums font-semibold">{planet.radiusKm.toLocaleString()}</span><span className="opacity-70">km</span></div>
-            <div className="flex items-baseline gap-1"><span className="opacity-70">Orbit</span><span className="tabular-nums font-semibold">{planet.semiMajorAxisAU}</span><span className="opacity-70">AU</span></div>
-            <div className="flex items-baseline gap-1"><span className="opacity-70">Year</span><span className="tabular-nums font-semibold">{planet.orbitalPeriodDays}</span><span className="opacity-70">days</span></div>
-            <div className="flex items-baseline gap-1"><span className="opacity-70">Day</span><span className="tabular-nums font-semibold">{Math.abs(planet.rotationPeriodHours)}</span><span className="opacity-70">h{planet.rotationPeriodHours < 0 ? " (retro)" : ""}</span></div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+            <div><span className="opacity-50">Radius</span> <span className="font-mono">{planet.radiusKm.toLocaleString()}</span> <span className="opacity-40">km</span></div>
+            <div><span className="opacity-50">Orbit</span> <span className="font-mono">{planet.semiMajorAxisAU}</span> <span className="opacity-40">AU</span></div>
+            <div><span className="opacity-50">Year</span> <span className="font-mono">{planet.orbitalPeriodDays.toLocaleString()}</span> <span className="opacity-40">d</span></div>
+            <div><span className="opacity-50">Day</span> <span className="font-mono">{Math.abs(planet.rotationPeriodHours).toFixed(1)}</span> <span className="opacity-40">h</span></div>
+            <div><span className="opacity-50">Tilt</span> <span className="font-mono">{planet.axialTiltDeg.toFixed(1)}°</span></div>
+            <div><span className="opacity-50">Incl.</span> <span className="font-mono">{planet.inclinationDeg.toFixed(2)}°</span></div>
           </div>
         </div>
       )}
 
-      {/* Controls Help */}
-      <div className="self-start bg-black/50 rounded-2xl p-3 text-xs backdrop-blur">
-        <div className="font-semibold mb-2">Controls</div>
-        <div className="space-y-1 opacity-80">
-          {cameraMode === "free" ? (
-            <>
-              <div>• <kbd className="bg-white/20 px-1 rounded">W</kbd> Move forward (where you&apos;re looking)</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">S</kbd> Move backward</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">A/D</kbd> Strafe left/right</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Mouse</kbd> Look around (click to lock)</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Escape</kbd> Unlock mouse</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">F</kbd> Switch to follow mode</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">R</kbd> Reset camera</div>
-            </>
-          ) : cameraMode === "spaceship" ? (
-            <>
-              <div>• <kbd className="bg-white/20 px-1 rounded">W</kbd> Fly forward</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">S</kbd> Fly backward</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">A/D</kbd> Strafe left/right</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Mouse</kbd> Control spaceship direction</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Escape</kbd> Unlock mouse</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">F</kbd> Switch to follow mode</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">R</kbd> Reset camera</div>
-            </>
-          ) : (
-            <>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Mouse</kbd> Drag to rotate camera</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Ctrl + Scroll</kbd> Zoom in/out</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Right Click</kbd> Pan camera</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">Click Planet</kbd> Select to focus</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">F</kbd> Switch to free camera</div>
-              <div>• <kbd className="bg-white/20 px-1 rounded">R</kbd> Reset camera</div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Crosshair for free camera and spaceship modes */}
+      {/* Crosshair */}
       {(cameraMode === "free" || cameraMode === "spaceship") && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center">
-          <div className="w-4 h-4 border border-white/60 rounded-full flex items-center justify-center">
-            <div className="w-1 h-1 bg-white/80 rounded-full"></div>
+          <div className="w-4 h-4 border border-white/40 rounded-full flex items-center justify-center">
+            <div className="w-0.5 h-0.5 bg-white/60 rounded-full" />
           </div>
-          {/* Click to lock indicator */}
-          {!document.pointerLockElement && (
-            <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded text-sm">
-              Click to lock mouse
-            </div>
-          )}
         </div>
       )}
     </div>

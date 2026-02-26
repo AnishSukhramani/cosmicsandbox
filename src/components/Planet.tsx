@@ -11,7 +11,7 @@ import {
 } from "three";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
 import type { PlanetData } from "@/lib/planets";
-import { KM_TO_UNITS } from "@/lib/planets";
+import { BODY_KM_TO_UNITS } from "@/lib/planets";
 import { useUiState } from "@/components/state";
 
 export interface PlanetProps {
@@ -68,12 +68,20 @@ function TexturedPlanetBody({
 
   const cloudRef = useRef<Mesh>(null);
 
+  // Rotation is tied to the simulation time scale from state.
+  // At daysPerSecond=1, 1 real second = 1 sim day. A planet with
+  // rotationPeriodHours=24 should do 1 full turn per second at that rate.
+  const daysPerSecond = useUiState.getState().daysPerSecond;
+  const paused = useUiState.getState().paused;
+
   useFrame((_, delta) => {
+    if (paused) return;
+    const simDaysDelta = delta * daysPerSecond;
     if (planetRef.current) {
-      const angularSpeed =
-        (Math.PI * 2) / (Math.abs(data.rotationPeriodHours) / 24);
+      const rotationsPerDay = 24 / Math.abs(data.rotationPeriodHours);
+      const angleThisFrame = simDaysDelta * rotationsPerDay * Math.PI * 2;
       planetRef.current.rotation.y +=
-        (data.rotationPeriodHours < 0 ? -1 : 1) * angularSpeed * delta * 0.5;
+        (data.rotationPeriodHours < 0 ? -1 : 1) * angleThisFrame;
     }
     if (cloudRef.current) {
       cloudRef.current.rotation.y += delta * 0.02;
@@ -121,11 +129,12 @@ function FallbackPlanetBody({
   const planetRef = useRef<Mesh>(null);
 
   useFrame((_, delta) => {
+    if (useUiState.getState().paused) return;
+    const simDaysDelta = delta * useUiState.getState().daysPerSecond;
     if (planetRef.current) {
-      const angularSpeed =
-        (Math.PI * 2) / (Math.abs(data.rotationPeriodHours) / 24);
+      const rotationsPerDay = 24 / Math.abs(data.rotationPeriodHours);
       planetRef.current.rotation.y +=
-        (data.rotationPeriodHours < 0 ? -1 : 1) * angularSpeed * delta * 0.5;
+        (data.rotationPeriodHours < 0 ? -1 : 1) * simDaysDelta * rotationsPerDay * Math.PI * 2;
     }
   });
 
@@ -179,7 +188,7 @@ function SaturnRings({ radius }: { radius: number }) {
 
 const Planet = ({ data, position, onClick, showLabel }: PlanetProps) => {
   const { selected } = useUiState();
-  const radius = Math.max(0.1, data.radiusKm * KM_TO_UNITS);
+  const radius = Math.max(0.02, data.radiusKm * BODY_KM_TO_UNITS);
   const isSelected = selected === data.name;
   const atmoColor = getAtmosphereColor(data.name);
 
